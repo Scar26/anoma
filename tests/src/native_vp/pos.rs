@@ -99,7 +99,9 @@
 //! - add arb invalid storage changes
 //! - add slashes
 
-use anoma::ledger::pos::anoma_proof_of_stake::PosBase;
+use anoma::{
+    ledger::pos::anoma_proof_of_stake::PosBase, types::storage::Epoch,
+};
 use anoma_vm_env::proof_of_stake::{
     staking_token_address, GenesisValidator, PosParams,
 };
@@ -108,7 +110,11 @@ use crate::tx::tx_host_env;
 
 /// initialize proof-of-stake genesis with the given list of validators and
 /// parameters.
-pub fn init_pos(genesis_validators: &[GenesisValidator], params: &PosParams) {
+pub fn init_pos(
+    genesis_validators: &[GenesisValidator],
+    params: &PosParams,
+    start_epoch: Epoch,
+) {
     tx_host_env::init();
 
     tx_host_env::with(|tx_env| {
@@ -121,11 +127,15 @@ pub fn init_pos(genesis_validators: &[GenesisValidator], params: &PosParams) {
                 &validator.staking_reward_address,
             ]);
         }
+        tx_env.storage.block.epoch = start_epoch;
         // Initialize PoS storage
-        let start_epoch = 0;
         tx_env
             .storage
-            .init_genesis(params, genesis_validators.iter(), start_epoch)
+            .init_genesis(
+                params,
+                genesis_validators.iter(),
+                u64::from(start_epoch),
+            )
             .unwrap();
     });
 }
@@ -133,12 +143,13 @@ pub fn init_pos(genesis_validators: &[GenesisValidator], params: &PosParams) {
 #[cfg(test)]
 mod tests {
 
-    use anoma::ledger::pos::anoma_proof_of_stake::PosBase;
+    use super::*;
+    
     use anoma::ledger::pos::PosParams;
     use anoma::types::storage::Epoch;
     use anoma::types::token;
     use anoma_vm_env::proof_of_stake::parameters::testing::arb_pos_params;
-    use anoma_vm_env::proof_of_stake::{staking_token_address, PosVP};
+    use anoma_vm_env::proof_of_stake::{PosVP};
     use anoma_vm_env::tx_prelude::Address;
     use proptest::prelude::*;
     use proptest::prop_state_machine;
@@ -151,7 +162,7 @@ mod tests {
         ValidPosAction,
     };
     use crate::native_vp::TestNativeVpEnv;
-    use crate::tx::{tx_host_env, TestTxEnv};
+    use crate::tx::{tx_host_env};
 
     prop_state_machine! {
         #![proptest_config(Config {
@@ -220,28 +231,8 @@ mod tests {
         ) -> Self::ConcreteState {
             println!();
             println!("New test case");
-
             // Initialize the transaction env
-            let mut tx_env = TestTxEnv::default();
-
-            // Set the epoch
-            let storage = &mut tx_env.storage;
-            storage.block.epoch = initial_state.epoch;
-
-            // Initialize PoS storage
-            storage
-                .init_genesis(
-                    &initial_state.params,
-                    [].into_iter(),
-                    initial_state.epoch,
-                )
-                .unwrap();
-
-            // Make sure that the staking token account exist
-            tx_env.spawn_accounts([staking_token_address()]);
-
-            // Use the `tx_env` for host env calls
-            tx_host_env::set(tx_env);
+            init_pos(&[], &initial_state.params, initial_state.epoch);
 
             // The "genesis" block state
             for change in initial_state.committed_valid_actions {
@@ -1625,31 +1616,29 @@ pub mod testing {
         let arb_delta =
             prop_oneof![(-(u64::MAX as i128)..0), (1..=u64::MAX as i128),];
 
-        prop_oneof![
-            (
-                arb_address_or_validator.clone(),
-                arb_address_or_validator,
-                arb_offset,
-                arb_delta,
-            )
-                .prop_map(|(validator, owner, offset, delta)| {
-                    vec![
-                        // We have to ensure that the addresses exists
-                        PosStorageChange::SpawnAccount {
-                            address: validator.clone(),
-                        },
-                        PosStorageChange::SpawnAccount {
-                            address: owner.clone(),
-                        },
-                        PosStorageChange::Bond {
-                            owner,
-                            validator,
-                            delta,
-                            offset,
-                        },
-                    ]
-                })
-        ]
+        prop_oneof![(
+            arb_address_or_validator.clone(),
+            arb_address_or_validator,
+            arb_offset,
+            arb_delta,
+        )
+            .prop_map(|(validator, owner, offset, delta)| {
+                vec![
+                    // We have to ensure that the addresses exists
+                    PosStorageChange::SpawnAccount {
+                        address: validator.clone(),
+                    },
+                    PosStorageChange::SpawnAccount {
+                        address: owner.clone(),
+                    },
+                    PosStorageChange::Bond {
+                        owner,
+                        validator,
+                        delta,
+                        offset,
+                    },
+                ]
+            })]
     }
 
     impl InvalidPosAction {
