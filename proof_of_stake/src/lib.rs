@@ -1479,15 +1479,21 @@ where
 
     // Update or create the bond
     let mut value = Bond {
-        deltas: HashMap::default(),
+        pos_deltas: HashMap::default(),
+        neg_deltas: TokenAmount::default(),
     };
     value
-        .deltas
+        .pos_deltas
         .insert(current_epoch + update_offset.value(params), amount);
     let bond = match current_bond {
-        None => EpochedDelta::init(value, current_epoch, params),
+        None => EpochedDelta::init_at_offset(
+            value,
+            current_epoch,
+            update_offset,
+            params,
+        ),
         Some(mut bond) => {
-            bond.add(value, current_epoch, params);
+            bond.add_at_offset(value, current_epoch, update_offset, params);
             bond
         }
     };
@@ -1650,27 +1656,26 @@ where
     let mut slashed_amount = TokenAmount::default();
     // Decrement the bond deltas starting from the rightmost value (a bond in a
     // future-most epoch) until whole amount is decremented
-    bond.rev_update_while(
+    bond.rev_while(
         |bonds, _epoch| {
-            bonds.deltas.retain(|epoch_start, bond_delta| {
+            for (epoch_start, bond_delta) in bonds.pos_deltas.iter() {
                 if *to_unbond == 0.into() {
                     return true;
                 }
                 let mut unbonded = HashMap::default();
                 let unbond_end =
                     current_epoch + update_offset.value(params) - 1;
-                // We need to accumulate the slashed delta for multiple slashes
-                // applicable to a bond, where each slash should be
-                // calculated from the delta reduced by the previous slash.
-                let applied_delta = if to_unbond > bond_delta {
+                // We need to accumulate the slashed delta for multiple
+                // slashes applicable to a bond, where
+                // each slash should be calculated from
+                // the delta reduced by the previous slash.
+                let applied_delta = if *to_unbond > *bond_delta {
                     unbonded.insert((*epoch_start, unbond_end), *bond_delta);
                     *to_unbond -= *bond_delta;
                     let applied_delta = *bond_delta;
-                    *bond_delta = 0.into();
                     applied_delta
                 } else {
                     unbonded.insert((*epoch_start, unbond_end), *to_unbond);
-                    *bond_delta -= *to_unbond;
                     let applied_delta = *to_unbond;
                     *to_unbond = 0.into();
                     applied_delta
@@ -1690,13 +1695,21 @@ where
 
                 // For each decremented bond value write a new unbond
                 unbond.add(Unbond { deltas: unbonded }, current_epoch, params);
-                // Remove bonds with no tokens left
-                *bond_delta != 0.into()
-            });
+            }
             // Stop the update once all the tokens are unbonded
             *to_unbond != 0.into()
         },
         current_epoch,
+        params,
+    );
+
+    bond.add_at_offset(
+        Bond {
+            pos_deltas: Default::default(),
+            neg_deltas: amount,
+        },
+        current_epoch,
+        update_offset,
         params,
     );
 

@@ -28,7 +28,7 @@ pub type ValidatorVotingPowers =
     EpochedDelta<VotingPowerDelta, OffsetUnbondingLen>;
 /// Epoched bond.
 pub type Bonds<TokenAmount> =
-    EpochedDelta<Bond<TokenAmount>, OffsetPipelineLen>;
+    EpochedDelta<Bond<TokenAmount>, OffsetUnbondingLen>;
 /// Epoched unbond.
 pub type Unbonds<TokenAmount> =
     EpochedDelta<Unbond<TokenAmount>, OffsetUnbondingLen>;
@@ -287,14 +287,18 @@ pub enum ValidatorState {
     Debug, Clone, Default, BorshDeserialize, BorshSerialize, BorshSchema,
 )]
 pub struct Bond<Token: Default> {
-    /// A key is a the epoch set for the bond. This is used in unbonding, where
-    /// it's needed for slash epoch range check.
+    /// Bonded positive deltas. A key is a the epoch set for the bond. This is
+    /// used in unbonding, where it's needed for slash epoch range check.
     ///
     /// TODO: For Bonds, there's unnecessary redundancy with this hash map.
     /// We only need to keep the start `Epoch` for the Epoched head element
     /// (i.e. the current epoch data), the rest of the array can be calculated
     /// from the offset from the head
-    pub deltas: HashMap<Epoch, Token>,
+    pub pos_deltas: HashMap<Epoch, Token>,
+    /// Unbonded negative deltas. The values are recorded as positive, but
+    /// should be subtracted when we're finding the total for some given
+    /// epoch.
+    pub neg_deltas: Token,
 }
 
 /// An unbond contains unbonded tokens from a validator's self-bond or a
