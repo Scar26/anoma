@@ -533,13 +533,15 @@ where
 
 impl<Token> Bond<Token>
 where
-    Token: Clone + Copy + Add<Output = Token> + Default,
+    Token: Clone + Copy + Add<Output = Token> + Sub<Output = Token> + Default,
 {
     /// Find the sum of all the bonds amounts.
     pub fn sum(&self) -> Token {
-        self.deltas
+        let pos_deltas_sum: Token = self
+            .pos_deltas
             .iter()
-            .fold(Default::default(), |acc, (_epoch, amount)| acc + *amount)
+            .fold(Default::default(), |acc, (_epoch, amount)| acc + *amount);
+        pos_deltas_sum - self.neg_deltas
     }
 }
 
@@ -550,24 +552,26 @@ where
     type Output = Self;
 
     fn add(mut self, rhs: Self) -> Self::Output {
-        // This is almost the same as `self.delta.extend(rhs.delta);`, except
-        // that we add values where a key is present on both sides.
-        let iter = rhs.deltas.into_iter();
-        let reserve = if self.deltas.is_empty() {
+        // This is almost the same as `self.pos_deltas.extend(rhs.pos_deltas);`,
+        // except that we add values where a key is present on both
+        // sides.
+        let iter = rhs.pos_deltas.into_iter();
+        let reserve = if self.pos_deltas.is_empty() {
             iter.size_hint().0
         } else {
             (iter.size_hint().0 + 1) / 2
         };
-        self.deltas.reserve(reserve);
+        self.pos_deltas.reserve(reserve);
         iter.for_each(|(k, v)| {
             // Add or insert
-            match self.deltas.get_mut(&k) {
+            match self.pos_deltas.get_mut(&k) {
                 Some(value) => *value += v,
                 None => {
-                    self.deltas.insert(k, v);
+                    self.pos_deltas.insert(k, v);
                 }
             }
         });
+        self.neg_deltas += rhs.neg_deltas;
         self
     }
 }

@@ -64,7 +64,7 @@ pub trait PosReadOnly {
         + Copy
         + Add<Output = Self::TokenAmount>
         + AddAssign
-        + Sub
+        + Sub<Output = Self::TokenAmount>
         + PartialOrd
         + Into<u64>
         + From<u64>
@@ -1174,10 +1174,15 @@ where
                 source: address.clone(),
                 validator: address.clone(),
             };
-            let mut deltas = HashMap::default();
-            deltas.insert(current_epoch, *tokens);
-            let bond =
-                EpochedDelta::init_at_genesis(Bond { deltas }, current_epoch);
+            let mut pos_deltas = HashMap::default();
+            pos_deltas.insert(current_epoch, *tokens);
+            let bond = EpochedDelta::init_at_genesis(
+                Bond {
+                    pos_deltas,
+                    neg_deltas: Default::default(),
+                },
+                current_epoch,
+            );
             Ok(GenesisValidatorData {
                 address: address.clone(),
                 staking_reward_address: staking_reward_address.clone(),
@@ -1611,6 +1616,7 @@ where
         + AddAssign
         + Into<u64>
         + From<u64>
+        + Sub<Output = TokenAmount>
         + SubAssign
         + BorshDeserialize
         + BorshSerialize
@@ -1621,7 +1627,7 @@ where
         + Clone
         + Copy
         + Add<Output = TokenChange>
-        + Sub
+        + Sub<Output = TokenChange>
         + From<TokenAmount>
         + Neg<Output = TokenChange>
         + Into<i128>

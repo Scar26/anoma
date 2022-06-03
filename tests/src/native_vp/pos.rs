@@ -99,9 +99,8 @@
 //! - add arb invalid storage changes
 //! - add slashes
 
-use anoma::{
-    ledger::pos::anoma_proof_of_stake::PosBase, types::storage::Epoch,
-};
+use anoma::ledger::pos::anoma_proof_of_stake::PosBase;
+use anoma::types::storage::Epoch;
 use anoma_vm_env::proof_of_stake::{
     staking_token_address, GenesisValidator, PosParams,
 };
@@ -143,13 +142,11 @@ pub fn init_pos(
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    
     use anoma::ledger::pos::PosParams;
     use anoma::types::storage::Epoch;
     use anoma::types::token;
     use anoma_vm_env::proof_of_stake::parameters::testing::arb_pos_params;
-    use anoma_vm_env::proof_of_stake::{PosVP};
+    use anoma_vm_env::proof_of_stake::PosVP;
     use anoma_vm_env::tx_prelude::Address;
     use proptest::prelude::*;
     use proptest::prop_state_machine;
@@ -161,8 +158,9 @@ mod tests {
         arb_invalid_pos_action, arb_valid_pos_action, InvalidPosAction,
         ValidPosAction,
     };
+    use super::*;
     use crate::native_vp::TestNativeVpEnv;
-    use crate::tx::{tx_host_env};
+    use crate::tx::tx_host_env;
 
     prop_state_machine! {
         #![proptest_config(Config {
@@ -172,12 +170,12 @@ mod tests {
             // some issues only manifest once the model progresses further.
             // Additionally, more cases will be explored every time this test is
             // executed in the CI.
-            cases: 5,
+            cases: 10,
             .. Config::default()
         })]
         #[test]
         /// A `StateMachineTest` implemented on `PosState`
-        fn pos_vp_state_machine_test(sequential 1..100 => ConcretePosState);
+        fn pos_vp_state_machine_test(sequential 1..300 => ConcretePosState);
     }
 
     /// Abstract representation of a state of PoS system
@@ -362,8 +360,8 @@ mod tests {
                 Just(Transition::NextEpoch),
                 arb_valid_pos_action(&valid_actions)
                     .prop_map(Transition::Valid),
-                arb_invalid_pos_action(&valid_actions)
-                    .prop_map(Transition::InvalidPos),
+                //                arb_invalid_pos_action(&valid_actions)
+                //                  .prop_map(Transition::InvalidPos),
             ]
             .boxed()
         }
@@ -1153,9 +1151,10 @@ pub mod testing {
                     let amount: u64 = delta.try_into().unwrap();
                     let amount: token::Amount = amount.into();
                     let mut value = Bond {
-                        deltas: HashMap::default(),
+                        pos_deltas: HashMap::default(),
+                        neg_deltas: Default::default(),
                     };
-                    value.deltas.insert(
+                    value.pos_deltas.insert(
                         (current_epoch + offset.value(params)).into(),
                         amount,
                     );
@@ -1180,34 +1179,27 @@ pub mod testing {
                             );
                             bonds
                         }
-                        None => Bonds::init(value, current_epoch, params),
+                        None => Bonds::init_at_offset(
+                            value,
+                            current_epoch,
+                            offset,
+                            params,
+                        ),
                     }
                 } else {
                     let mut bonds = bonds.unwrap_or_else(|| {
                         Bonds::init(Default::default(), current_epoch, params)
                     });
                     let to_unbond: u64 = (-delta).try_into().unwrap();
-                    let mut to_unbond: token::Amount = to_unbond.into();
-                    let to_unbond = &mut to_unbond;
-                    bonds.rev_update_while(
-                        |bonds, _epoch| {
-                            bonds.deltas.retain(|_epoch_start, bond_delta| {
-                                if *to_unbond == 0.into() {
-                                    return true;
-                                }
-                                if to_unbond > bond_delta {
-                                    *to_unbond -= *bond_delta;
-                                    *bond_delta = 0.into();
-                                } else {
-                                    *bond_delta -= *to_unbond;
-                                    *to_unbond = 0.into();
-                                }
-                                // Remove bonds with no tokens left
-                                *bond_delta != 0.into()
-                            });
-                            *to_unbond != 0.into()
+                    let to_unbond: token::Amount = to_unbond.into();
+
+                    bonds.add_at_offset(
+                        Bond {
+                            pos_deltas: Default::default(),
+                            neg_deltas: to_unbond,
                         },
                         current_epoch,
+                        offset,
                         params,
                     );
                     bonds
@@ -1239,7 +1231,7 @@ pub mod testing {
                     && bond_epoch >= bonds.last_update().into()
                 {
                     if let Some(bond) = bonds.get_delta_at_epoch(bond_epoch) {
-                        for (start_epoch, delta) in &bond.deltas {
+                        for (start_epoch, delta) in &bond.pos_deltas {
                             if delta >= &to_unbond {
                                 value.deltas.insert(
                                     (
@@ -1616,29 +1608,31 @@ pub mod testing {
         let arb_delta =
             prop_oneof![(-(u64::MAX as i128)..0), (1..=u64::MAX as i128),];
 
-        prop_oneof![(
-            arb_address_or_validator.clone(),
-            arb_address_or_validator,
-            arb_offset,
-            arb_delta,
-        )
-            .prop_map(|(validator, owner, offset, delta)| {
-                vec![
-                    // We have to ensure that the addresses exists
-                    PosStorageChange::SpawnAccount {
-                        address: validator.clone(),
-                    },
-                    PosStorageChange::SpawnAccount {
-                        address: owner.clone(),
-                    },
-                    PosStorageChange::Bond {
-                        owner,
-                        validator,
-                        delta,
-                        offset,
-                    },
-                ]
-            })]
+        prop_oneof![
+            (
+                arb_address_or_validator.clone(),
+                arb_address_or_validator,
+                arb_offset,
+                arb_delta,
+            )
+                .prop_map(|(validator, owner, offset, delta)| {
+                    vec![
+                        // We have to ensure that the addresses exists
+                        PosStorageChange::SpawnAccount {
+                            address: validator.clone(),
+                        },
+                        PosStorageChange::SpawnAccount {
+                            address: owner.clone(),
+                        },
+                        PosStorageChange::Bond {
+                            owner,
+                            validator,
+                            delta,
+                            offset,
+                        },
+                    ]
+                })
+        ]
     }
 
     impl InvalidPosAction {

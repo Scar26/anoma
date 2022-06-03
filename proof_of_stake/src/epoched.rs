@@ -596,7 +596,7 @@ where
         let epoch = current_epoch.into();
         let offset = Offset::value(params) as usize;
         for ix in (0..offset + 1).rev() {
-            if let Some(Some(current)) = self.data.get_mut(ix) {
+            if let Some(Some(current)) = self.data.get(ix) {
                 let keep_going = f(current, epoch + ix);
                 if !keep_going {
                     break;

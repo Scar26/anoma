@@ -39,7 +39,7 @@ mod tests {
     use anoma_tx_prelude::proof_of_stake::parameters::testing::arb_pos_params;
     use anoma_tx_prelude::token;
     use anoma_vp_prelude::proof_of_stake::types::{
-        Unbond, VotingPower, VotingPowerDelta, Bond,
+        Bond, Unbond, VotingPower, VotingPowerDelta,
     };
     use anoma_vp_prelude::proof_of_stake::{
         staking_token_address, BondId, GenesisValidator, PosVP,
@@ -80,7 +80,7 @@ mod tests {
 
                 // To allow to unbond delegation, there must be a delegation
                 // bond first.
-                // First, credit the bond's source with the initial stake, 
+                // First, credit the bond's source with the initial stake,
                 // before we initialize the bond below
                 tx_env.credit_tokens(
                     &source,
@@ -91,7 +91,7 @@ mod tests {
         });
 
         if let Some(source) = &unbond.source {
-            // Initialize the delegation - unlike genesis validator's self-bond, 
+            // Initialize the delegation - unlike genesis validator's self-bond,
             // this happens at pipeline offset
             anoma_tx_prelude::proof_of_stake::bond_tokens(
                 unbond.source.as_ref(),
@@ -140,7 +140,7 @@ mod tests {
         //     - `#{PoS}/validator/#{validator}/total_deltas`
         let total_delta_post =
             PoS.read_validator_total_deltas(&unbond.validator);
-        
+
         let expected_deltas_at_pipeline = if unbond.source.is_some() {
             // When this is a delegation, there will be no bond until pipeline
             0.into()
@@ -149,8 +149,8 @@ mod tests {
             initial_stake
         };
 
-        // Before pipeline offset, there can only be self-bond for genesis 
-        // validator. In case of a delegation the state is setup so that there 
+        // Before pipeline offset, there can only be self-bond for genesis
+        // validator. In case of a delegation the state is setup so that there
         // is no bond until pipeline offset.
         for epoch in 0..pos_params.pipeline_len {
             assert_eq!(
@@ -161,7 +161,7 @@ mod tests {
             );
         }
 
-        // At and after pipeline offset, there can be either delegation or 
+        // At and after pipeline offset, there can be either delegation or
         // self-bond, both of which are initialized to the same `initial_stake`
         for epoch in pos_params.pipeline_len..pos_params.unbonding_len {
             assert_eq!(
@@ -179,8 +179,8 @@ mod tests {
             assert_eq!(
                 total_delta_post.as_ref().unwrap().get(epoch),
                 Some(expected_stake),
-                "The total deltas after the unbonding offset epoch must \
-                 be decremented by the unbonded amount - checking in epoch: \
+                "The total deltas after the unbonding offset epoch must be \
+                 decremented by the unbonded amount - checking in epoch: \
                  {epoch}"
             );
         }
@@ -188,18 +188,21 @@ mod tests {
         //     - `#{staking_token}/balance/#{PoS}`
         let pos_balance_post: token::Amount =
             read(&pos_balance_key.to_string()).unwrap();
-        assert_eq!(pos_balance_pre, pos_balance_post, "Unbonding doesn't affect PoS system balance");
+        assert_eq!(
+            pos_balance_pre, pos_balance_post,
+            "Unbonding doesn't affect PoS system balance"
+        );
 
         //     - `#{PoS}/unbond/#{owner}/#{validator}`
         let unbonds_post = PoS.read_unbond(&unbond_id).unwrap();
         let bonds_post = PoS.read_bond(&unbond_id).unwrap();
         for epoch in 0..pos_params.unbonding_len {
-            let unbond: Option<Unbond<token::Amount>> =
-                unbonds_post.get(epoch);
+            let unbond: Option<Unbond<token::Amount>> = unbonds_post.get(epoch);
 
             assert!(
                 unbond.is_none(),
-                "There should be no unbond until unbonding offset - checking epoch {epoch}"
+                "There should be no unbond until unbonding offset - checking \
+                 epoch {epoch}"
             );
         }
         match &unbond.source {
@@ -209,7 +212,7 @@ mod tests {
                     anoma_tx_prelude::proof_of_stake::types::Epoch::from(
                         pos_params.pipeline_len,
                     );
-                // We're unbonding the delegation in the same epoch as it was 
+                // We're unbonding the delegation in the same epoch as it was
                 // initialized
                 let end_epoch =
                     anoma_tx_prelude::proof_of_stake::types::Epoch::from(
@@ -230,28 +233,38 @@ mod tests {
 
                 dbg!(&bonds_post);
                 for epoch in 0..pos_params.pipeline_len {
-                        let bond: Option<Bond<token::Amount>> =
-                            bonds_post.get(epoch);
-                        assert!(bond.is_none(), "There is no delegation before pipeline offset, got {bond:?}, checking epoch {epoch}");
+                    let bond: Option<Bond<token::Amount>> =
+                        bonds_post.get(epoch);
+                    assert!(
+                        bond.is_none(),
+                        "There is no delegation before pipeline offset, got \
+                         {bond:?}, checking epoch {epoch}"
+                    );
                 }
                 for epoch in pos_params.pipeline_len..pos_params.unbonding_len {
-                        let bond: Bond<token::Amount> =
-                            bonds_post.get(epoch).unwrap();
-                        let expected_bond = HashMap::from_iter([(
-                            start_epoch,
-                            initial_stake,
-                        )]);
-                        assert_eq!(bond.deltas, expected_bond, "Before unbonding offset, the bond should be untouched, checking epoch {epoch}");
+                    let bond: Bond<token::Amount> =
+                        bonds_post.get(epoch).unwrap();
+                    let expected_bond =
+                        HashMap::from_iter([(start_epoch, initial_stake)]);
+                    assert_eq!(
+                        bond.deltas, expected_bond,
+                        "Before unbonding offset, the bond should be \
+                         untouched, checking epoch {epoch}"
+                    );
                 }
                 {
                     let epoch = pos_params.unbonding_len + 1;
-                        let bond: Bond<token::Amount> =
-                            bonds_post.get(epoch).unwrap();
-                        let expected_bond = HashMap::from_iter([(
-                            start_epoch,
-                            initial_stake - unbond.amount,
-                        )]);
-                        assert_eq!(bond.deltas, expected_bond, "At unbonding offset, the unbonded amount should have been deducted, checking epoch {epoch}");
+                    let bond: Bond<token::Amount> =
+                        bonds_post.get(epoch).unwrap();
+                    let expected_bond = HashMap::from_iter([(
+                        start_epoch,
+                        initial_stake - unbond.amount,
+                    )]);
+                    assert_eq!(
+                        bond.deltas, expected_bond,
+                        "At unbonding offset, the unbonded amount should have \
+                         been deducted, checking epoch {epoch}"
+                    );
                 }
             }
             None => {
@@ -271,16 +284,14 @@ mod tests {
                     unbonds_post.get(pos_params.unbonding_len).unwrap();
                 assert_eq!(
                     unbond.deltas, expected_unbond,
-                    "Unbonded self-bond at unbonding offset should be equal to the \
-                     unbonded amount"
+                    "Unbonded self-bond at unbonding offset should be equal \
+                     to the unbonded amount"
                 );
 
-
-        for epoch in 0..pos_params.unbonding_len {
-        }
-        {
-            let epoch = pos_params.unbonding_len + 1;
-        }
+                for epoch in 0..pos_params.unbonding_len {}
+                {
+                    let epoch = pos_params.unbonding_len + 1;
+                }
             }
         }
     }
