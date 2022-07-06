@@ -124,7 +124,7 @@ where
                         let conv = (
                             addr,
                             epoch,
-                            Into::<masp_primitives::transaction::components::Amount>::into(conv.clone().0),
+                            conv.clone().0.assets,
                             self.storage.conversion_state.tree.path(*pos)
                         );
                         response::Query {

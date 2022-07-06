@@ -435,7 +435,7 @@ impl FromStr for MaspValue {
 }
 
 /// Represents an Allowed Conversion for MASP incentives
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, BorshSerialize, BorshDeserialize)]
 pub struct AllowedConversion(pub masp_primitives::convert::AllowedConversion);
 
 impl AllowedConversion {
@@ -445,36 +445,9 @@ impl AllowedConversion {
     }
 }
 
-impl BorshSerialize for AllowedConversion {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> borsh::maybestd::io::Result<()> {
-        BorshSerialize::serialize(&self, writer)
-    }
-}
-
-impl BorshDeserialize for AllowedConversion {
-    /// This deserialization is unsafe because it does not do the expensive
-    /// computation of checking whether the asset generator corresponds to the
-    /// deserialized amount.
-    fn deserialize(buf: &mut &[u8]) -> borsh::maybestd::io::Result<Self> {
-        let assets:  std::collections::BTreeMap<masp_primitives::asset_type::AssetType, i64> = BorshDeserialize::deserialize(buf)?;
-        Ok(AllowedConversion(masp_primitives::convert::AllowedConversion{ assets }))
-    }
-}
-
 impl AddAssign for AllowedConversion {
     fn add_assign(&mut self, rhs: Self) {
-        let mut ret = self.clone();
-        for (atype, amount) in rhs.0.assets.iter() {
-            let ent = ret.0.assets[atype] + amount;
-            if ent == 0 {
-                ret.0.assets.remove(atype);
-            } else if -MAX_MONEY <= ent && ent <= MAX_MONEY {
-                ret.0.assets.insert(*atype, ent);
-            } else {
-                panic!("addition should remain in range");
-            }
-        }
-        *self = ret;
+        self.0 += rhs.0;
     }
 }
 
